@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo de Tiro 2D</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background-color: black; color: white; text-align: center; overflow: hidden; }
+        canvas { background-color: gray; display: block; margin: 20px auto; }
+        #menu, #configuracoes { display: flex; flex-direction: column; align-items: center; margin-top: 50px; }
+        button { background-color: #007bff; color: white; border: none; padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; border-radius: 5px; }
+        button:hover { background-color: #0056b3; }
+        #configuracoes { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="menu">
+        <h1>Jogo de Tiro 2D</h1>
+        <button onclick="iniciarJogo()">Iniciar Jogo</button>
+        <button onclick="abrirConfiguracoes()">Configurações</button>
+    </div>
+
+    <div id="configuracoes">
+        <h2>Configurações</h2>
+        <label for="qualidade">Qualidade:</label>
+        <select id="qualidade">
+            <option value="Baixa">Baixa</option>
+            <option value="Média">Média</option>
+            <option value="Alta" selected>Alta</option>
+        </select>
+        <br><br>
+        <label for="volume">Volume:</label>
+        <input type="range" id="volume" min="0" max="100" value="100">
+        <br><br>
+        <button onclick="salvarConfiguracoes()">Salvar e Voltar</button>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="500" style="display: none;"></canvas>
+    <h2 id="score" style="display: none;">Pontos: 0</h2>
+    <h2 id="vida" style="display: none;">Vida: 100</h2>
+
+    <script>
+        let config = JSON.parse(localStorage.getItem("config")) || { qualidade: "Alta", volume: 100 };
+        let canvas = document.getElementById("gameCanvas");
+        let ctx = canvas.getContext("2d");
+        let player, bullets = [], enemies = [];
+        let keys = {};
+        let score = 0;
+        let vida = 100;
+        let armaSelecionada = "pistola";
+
+        let shootSound = new Audio("https://www.soundjay.com/button/sounds/button-3.mp3");
+        let explosionSound = new Audio("https://www.soundjay.com/explosion/sounds/explosion-01.mp3");
+
+        function iniciarJogo() {
+            document.getElementById("menu").style.display = "none";
+            document.getElementById("score").style.display = "block";
+            document.getElementById("vida").style.display = "block";
+            canvas.style.display = "block";
+            setupGame();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function abrirConfiguracoes() {
+            document.getElementById("menu").style.display = "none";
+            document.getElementById("configuracoes").style.display = "block";
+            document.getElementById("qualidade").value = config.qualidade;
+            document.getElementById("volume").value = config.volume;
+        }
+
+        function salvarConfiguracoes() {
+            config.qualidade = document.getElementById("qualidade").value;
+            config.volume = document.getElementById("volume").value;
+            shootSound.volume = config.volume / 100;
+            explosionSound.volume = config.volume / 100;
+            localStorage.setItem("config", JSON.stringify(config));
+            document.getElementById("configuracoes").style.display = "none";
+            document.getElementById("menu").style.display = "block";
+        }
+
+        function setupGame() {
+            player = { x: 400, y: 450, width: 40, height: 40, speed: 5 };
+            enemies = [];
+            bullets = [];
+            score = 0;
+            vida = 100;
+            spawnEnemies();
+            document.addEventListener("keydown", (e) => keys[e.key] = true);
+            document.addEventListener("keyup", (e) => keys[e.key] = false);
+        }
+
+        function spawnEnemies() {
+            setInterval(() => {
+                let moveSideways = Math.random() > 0.5;
+                let direction = Math.random() > 0.5 ? 1 : -1;
+                enemies.push({ 
+                    x: Math.random() * canvas.width, 
+                    y: 0, 
+                    width: 30, 
+                    height: 30, 
+                    speedY: 2,
+                    speedX: moveSideways ? 1.5 * direction : 0,
+                    moveSideways: moveSideways 
+                });
+            }, 2000);
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (keys["ArrowLeft"] || keys["a"]) player.x -= player.speed;
+            if (keys["ArrowRight"] || keys["d"]) player.x += player.speed;
+            if (keys[" "]) shootBullet();
+            if (keys["1"]) armaSelecionada = "pistola";
+            if (keys["2"]) armaSelecionada = "metralhadora";
+            if (keys["3"]) armaSelecionada = "escopeta";
+
+            player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+
+            ctx.fillStyle = "blue";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            bullets.forEach((bullet, index) => {
+                bullet.y -= bullet.speed;
+                if (bullet.y < 0) bullets.splice(index, 1);
+                ctx.fillStyle = "red";
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            enemies.forEach((enemy, index) => {
+                enemy.y += enemy.speedY;
+
+                if (enemy.moveSideways) {
+                    enemy.x += enemy.speedX;
+                    if (enemy.x < 0 || enemy.x > canvas.width - enemy.width) {
+                        enemy.speedX *= -1;
+                    }
+                }
+
+                if (enemy.y > canvas.height) {
+                    vida -= 10;
+                    enemies.splice(index, 1);
+                }
+
+                bullets.forEach((bullet, bIndex) => {
+                    if (colisao(bullet, enemy)) {
+                        explosionSound.play();
+                        bullets.splice(bIndex, 1);
+                        enemies.splice(index, 1);
+                        score += 10;
+                    }
+                });
+
+                ctx.fillStyle = "green";
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            });
+
+            document.getElementById("score").innerText = "Pontos: " + score;
+            document.getElementById("vida").innerText = "Vida: " + vida;
+
+            if (vida <= 0) alert("Game Over!");
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function shootBullet() {
+            if (armaSelecionada === "metralhadora" || bullets.length < 3) {
+                bullets.push({ x: player.x + 15, y: player.y, width: 10, height: 20, speed: 7 });
+                shootSound.play();
+            }
+        }
+
+        function colisao(a, b) {
+            return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+        }
+    </script>
+
+</body>
+</html>
+
